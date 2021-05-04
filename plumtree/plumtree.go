@@ -46,6 +46,8 @@ type Plumtree struct {
 
 	lazyQueue  []addressedMsg
 	eagerQueue map[string]message.Message
+
+	useUDP bool
 }
 
 type messageSource = struct {
@@ -157,7 +159,7 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 		f.logger.Infof("Received duplicate message %d from %s", gossipMsg.MID, sender)
 		f.addToLazy(sender)
 		f.removeFromEager(sender)
-		f.babel.SendMessage(PruneMessage{}, sender, f.ID(), f.ID(), true)
+		f.sendMessage(PruneMessage{}, sender)
 	}
 }
 
@@ -191,7 +193,7 @@ func (f *Plumtree) uponSendIHaveTimer(t timer.Timer) {
 			continue
 		}
 		f.logger.Info("Sending IHave message  to " + v.d.String())
-		f.babel.SendMessage(v.m, v.d, f.ID(), f.ID(), true)
+		f.sendMessage(v.m, v.d)
 	}
 	f.lazyQueue = nil
 }
@@ -214,7 +216,7 @@ func (f *Plumtree) uponReceiveGraftMessage(sender peer.Peer, m message.Message) 
 		return
 	}
 	// f.logger.Infof("Replying to graft message %d from %s", graftMsg.MID, sender.String())
-	f.babel.SendMessage(toSend, sender, f.ID(), f.ID(), true)
+	f.sendMessage(toSend, sender)
 }
 
 func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
@@ -241,13 +243,20 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 				delete(f.view, k)
 				continue
 			}
-
-			f.babel.SendMessage(shared.GraftMessage{
+			f.sendMessage(shared.GraftMessage{
 				MID:   iHaveTimeoutTimer.mid,
 				Round: messageSource.r,
-			}, messageSource.p, f.ID(), f.ID(), true)
+			}, messageSource.p)
 			break
 		}
+	}
+}
+
+func (f *Plumtree) sendMessage(m message.Message, target peer.Peer) {
+	if f.useUDP {
+		f.babel.SendMessageSideStream(m, target, target.ToUDPAddr(), f.ID(), f.ID())
+	} else {
+		f.babel.SendMessage(m, target, f.ID(), f.ID(), true)
 	}
 }
 
@@ -304,15 +313,14 @@ func (f *Plumtree) uponNeighborUpNotification(n notification.Notification) {
 
 /* -------------------------------------------------------*/
 
-func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useC, isDemmon bool) protocol.Protocol {
+func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) protocol.Protocol {
 	logger := logs.NewLogger(name)
 	// logger.SetLevel(logrus.InfoLevel)
 	return &Plumtree{
-		r:      rand.New(rand.NewSource(time.Now().UnixNano())),
-		babel:  babel,
-		logger: logger,
-		size:   50_000,
-		// pruneBackoff:     map[string]time.Time{},
+		r:                rand.New(rand.NewSource(time.Now().UnixNano())),
+		babel:            babel,
+		logger:           logger,
+		size:             50_000,
 		view:             map[string]peer.Peer{},
 		lazyPushPeers:    map[string]peer.Peer{},
 		eagerPushPeers:   map[string]peer.Peer{},
@@ -320,7 +328,8 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useC, isDemmon b
 		mids:             []uint32{},
 		receivedMessages: map[uint32]message.Message{},
 		ongoingTimers:    make(map[uint32]int),
-		eagerQueue:       map[string]message.Message{},
 		lazyQueue:        []addressedMsg{},
+		eagerQueue:       map[string]message.Message{},
+		useUDP:           useUDP,
 	}
 }

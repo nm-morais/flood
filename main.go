@@ -32,6 +32,9 @@ var (
 	broadcastProtocol  *string
 	bwScore            *int64
 	useBW              *bool
+	nrMessagesPerNode  *int
+	payloadSize        *int
+	scenarioDuration   *time.Duration
 )
 
 const (
@@ -57,6 +60,10 @@ func main() {
 	confFile = flag.String("conf", "", "the path to the config file")
 	bwScore = flag.Int64("bandwidth", 0, "bandwidth score")
 	useBW = flag.Bool("useBW", false, "if bandwidths are used")
+	nrMessagesPerNode = flag.Int("msgsPerNode", 30, "Number of messages each node sends")
+	scenarioDuration = flag.Duration("scenarioDuration", 1*time.Minute, "The time to send the configured messages")
+	payloadSize = flag.Int("payloadSize", 10_000, "The number of bytes of the payload")
+
 	fmt.Println("ARGS:", os.Args)
 	flag.Parse()
 	selfPeer := peer.NewPeer(net.ParseIP(*listenIP), defaultPort, defaultAnalyticsPort)
@@ -227,14 +234,14 @@ func main() {
 	if *broadcastProtocol == floodName {
 		floodProto = flood.NewFloodProtocol(p, *membershipProtocol == cyclonTmanName, *membershipProtocol == demmonName)
 	} else if *broadcastProtocol == plumTreeName {
-		floodProto = plumtree.NewPlumTreeProtocol(p, *membershipProtocol == cyclonTmanName, *membershipProtocol == demmonName)
+		floodProto = plumtree.NewPlumTreeProtocol(p, *membershipProtocol == cyclonTmanName)
 	} else {
 		panic("Unrecognized broadcast protocol")
 	}
 	isPlumtreeRoot := bootstrapsParsed[0].Host == selfPeer.IP().String()
 
 	p.RegisterProtocol(floodProto)
-	p.RegisterProtocol(application.NewApplicationProtocol(p, isPlumtreeRoot, floodProto.ID(), *logFolder, "bcastStats.csv"))
+	p.RegisterProtocol(application.NewApplicationProtocol(p, isPlumtreeRoot, floodProto.ID(), *logFolder, "bcastStats.csv", *nrMessagesPerNode, *payloadSize, *scenarioDuration))
 	p.StartSync()
 }
 

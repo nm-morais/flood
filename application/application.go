@@ -54,6 +54,8 @@ func (a *Application) Start() {
 	a.logger.Info("Waiting...")
 	if a.isPlumtreeRoot {
 		a.logger.Infof("Starting as plumtree root, prepareTime: %+v", a.prepareTime)
+	} else {
+		a.logger.Infof("prepareTime: %+v", a.prepareTime)
 	}
 	a.babel.RegisterTimer(protoID, StartTimer{duration: a.prepareTime})
 	a.logger.Infof("Using payloadsize=%v, sending %d messages over %+v", a.payloadSize, a.nrMessagesToSend, a.runTime)
@@ -124,15 +126,15 @@ func (a *Application) uponBroadcastTimer(t timer.Timer) {
 
 /*-------------------------------------------------------------------*/
 
-func NewApplicationProtocol(babel protocolManager.ProtocolManager, isPlumtreeRoot bool, serviceProtoID protocol.ID, csvFolder, csvFile string) protocol.Protocol {
+func NewApplicationProtocol(babel protocolManager.ProtocolManager, isPlumtreeRoot bool, serviceProtoID protocol.ID, csvFolder, csvFile string, nrMessagesToSend int, payloadSize int, scenarioDuration time.Duration) protocol.Protocol {
 	logger := logs.NewLogger(Name)
-	csvHeaders := []string{"ip", "timestamp", "time", "hopNr", "mid"}
-	prepareTime := 60 * time.Second
-	if !isPlumtreeRoot {
-		prepareTime += 20 * time.Second
-	}
-	runTime := 60 * time.Second
 
+	csvHeaders := []string{"ip", "timestamp", "time", "hopNr", "mid"}
+	prepareTime := time.Duration(float32(scenarioDuration) * 0.3)
+	if isPlumtreeRoot {
+		prepareTime -= time.Duration(float32(scenarioDuration) * 0.1)
+	}
+	runTime := time.Duration(float32(scenarioDuration-prepareTime) * 0.8)
 	return &Application{
 		isPlumtreeRoot:   isPlumtreeRoot,
 		writer:           setupCSVWriter(csvFolder, csvFile, csvHeaders),
@@ -140,8 +142,8 @@ func NewApplicationProtocol(babel protocolManager.ProtocolManager, isPlumtreeRoo
 		babel:            babel,
 		logger:           logger,
 		runTimer:         0,
-		payloadSize:      30_000,
-		nrMessagesToSend: 240,
+		payloadSize:      payloadSize,
+		nrMessagesToSend: nrMessagesToSend,
 		nrSent:           0,
 		prepareTime:      prepareTime,
 		runTime:          runTime,
