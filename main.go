@@ -72,8 +72,14 @@ func main() {
 		Silent:           false,
 		LogFolder:        *logFolder,
 		HandshakeTimeout: 8 * time.Second,
-		SmConf:           babel.StreamManagerConf{BatchMaxSizeBytes: 65_534, BatchTimeout: 100 * time.Millisecond, DialTimeout: 3 * time.Second},
-		Peer:             selfPeer,
+		SmConf: babel.StreamManagerConf{
+			BatchMaxSizeBytes: 65_534,
+			BatchTimeout:      300 * time.Millisecond,
+			DialTimeout:       3 * time.Second,
+			WriteTimeout:      3 * time.Second,
+		},
+		Peer:     selfPeer,
+		PoolSize: 0,
 	}
 	nwConf := &babel.NodeWatcherConf{
 		PrintLatencyToInterval:    10 * time.Second,
@@ -81,13 +87,13 @@ func main() {
 		MaxRedials:                2,
 		TcpTestTimeout:            10 * time.Second,
 		UdpTestTimeout:            10 * time.Second,
-		NrTestMessagesToSend:      1,
+		NrTestMessagesToSend:      2,
 		NrMessagesWithoutWait:     3,
-		NrTestMessagesToReceive:   1,
+		NrTestMessagesToReceive:   2,
 		HbTickDuration:            1000 * time.Millisecond,
 		MinSamplesLatencyEstimate: 3,
-		OldLatencyWeight:          0.75,
-		NewLatencyWeight:          0.25,
+		OldLatencyWeight:          0.9,
+		NewLatencyWeight:          0.1,
 		PhiThreshold:              8.0,
 		WindowSize:                20,
 		MinStdDeviation:           500 * time.Millisecond,
@@ -101,6 +107,7 @@ func main() {
 
 	p := babel.NewProtoManager(protoManagerConf)
 	bootstrapsParsed := ParseBootstrapArg(bootstraps)
+	isLandmark := false
 	switch *membershipProtocol {
 
 	case xBotName:
@@ -179,6 +186,9 @@ func main() {
 				0,
 			)
 			landmarks = append(landmarks, landmark)
+			if peer.PeersEqual(landmark, selfPeer) {
+				isLandmark = true
+			}
 		}
 		conf := &demmon.DemmonTreeConfig{
 			MaxDiffForBWScore:                        15,
@@ -232,7 +242,7 @@ func main() {
 
 	var floodProto protocol.Protocol
 	if *broadcastProtocol == floodName {
-		floodProto = flood.NewFloodProtocol(p, *membershipProtocol == cyclonTmanName, *membershipProtocol == demmonName)
+		floodProto = flood.NewFloodProtocol(p, *membershipProtocol == cyclonTmanName, *membershipProtocol == demmonName, isLandmark)
 	} else if *broadcastProtocol == plumTreeName {
 		floodProto = plumtree.NewPlumTreeProtocol(p, *membershipProtocol == cyclonTmanName)
 	} else {

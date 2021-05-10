@@ -26,19 +26,20 @@ type messageSource = struct {
 }
 
 type addressedMsg = struct {
-	d peer.Peer
-	m message.Message
+	m  message.Message
+	ts time.Time
 }
 
 //Messages types follow x1xx
 const (
 	SendIHaveDelay = 1 * time.Second
-	IHaveTimeout   = 1 * time.Second
+	IHaveTimeout   = 2 * time.Second
 	FloodProtoID   = 21000
 	name           = "Flood"
 )
 
 type Flood struct {
+	isLandmark       bool
 	mids             []uint32
 	size             int
 	r                *rand.Rand
@@ -46,7 +47,7 @@ type Flood struct {
 	logger           *logrus.Logger
 	neighbors        map[string]peer.Peer       //of peers
 	receivedMessages map[uint32]message.Message //of ints
-	demmonView       *demmonProto.InView
+	demmonView       demmonProto.InView
 	useUDP           bool
 	isDemmon         bool
 	missingMessages  map[uint32]map[string]messageSource
@@ -109,8 +110,8 @@ func (f *Flood) MessageDelivered(message message.Message, peer peer.Peer) {
 	// do nothing really
 }
 
-func (f *Flood) MessageDeliveryErr(message message.Message, peer peer.Peer, error errors.Error) {
-	f.logger.Errorf("Couldn't message of type %s to %s ", reflect.TypeOf(message), peer.String())
+func (f *Flood) MessageDeliveryErr(message message.Message, peer peer.Peer, err errors.Error) {
+	f.logger.Errorf("Couldn't send message of type %s to %s due to: %s", reflect.TypeOf(message), peer.String(), err.ToString())
 }
 
 func (f *Flood) broadcastTo(m message.Message, p peer.Peer) {
@@ -123,70 +124,102 @@ func (f *Flood) broadcastTo(m message.Message, p peer.Peer) {
 
 func (f *Flood) lazyPush(m shared.IHaveMessage, p peer.Peer) {
 	f.lazyQueue = append(f.lazyQueue, addressedMsg{
-		d: p,
-		m: shared.IHaveMessage{
-			MID:   m.MID,
-			Round: m.Round,
-		},
+		m:  shared.IHaveMessage{MID: m.MID, Round: m.Round},
+		ts: time.Now(),
 	})
 }
 
 func (f *Flood) demmonFlood(m shared.GossipMessage, sender peer.Peer) {
-	if f.demmonView == nil {
-		return
-	}
-
-	if peer.PeersEqual(sender, f.babel.SelfPeer()) {
-		for _, p := range f.demmonView.Children {
-			f.broadcastTo(m, p)
-		}
-
-		for _, p := range f.demmonView.Siblings {
-			f.broadcastTo(m, p)
-
-		}
-		if f.demmonView.Parent != nil {
-			f.broadcastTo(m, f.demmonView.Parent)
-		}
-		return
-	}
-
 	iHaveMsg := shared.IHaveMessage{
 		MID:   m.MID,
 		Round: m.Hop,
 	}
-	sibling, child, parent := f.getPeerRelationshipType(sender)
-	if parent || sibling {
-		for _, p := range f.demmonView.Siblings {
-			if peer.PeersEqual(p, sender) {
-				continue
-			}
-			f.lazyPush(iHaveMsg, p)
+	for _, p := range f.demmonView.Children {
+		if peer.PeersEqual(p, sender) {
+			continue
 		}
-		if f.demmonView.Parent != nil {
-			if !peer.PeersEqual(f.demmonView.Parent, sender) {
-				f.lazyPush(iHaveMsg, f.demmonView.Parent)
-			}
-		}
-		for _, p := range f.demmonView.Children {
-			f.broadcastTo(m, p)
+		f.broadcastTo(m, p)
+	}
+	if f.demmonView.Parent != nil {
+		if !peer.PeersEqual(f.demmonView.Parent, sender) {
+			f.broadcastTo(m, f.demmonView.Parent)
 		}
 	}
 
-	if child {
-		for _, p := range f.demmonView.Siblings {
-			f.broadcastTo(m, p)
-		}
-		if f.demmonView.Parent != nil {
-			f.broadcastTo(m, f.demmonView.Parent)
-		}
-		for _, v := range f.demmonView.Children {
-			if peer.PeersEqual(v, sender) {
-				continue
+	if f.isLandmark {
+		isSibling, _, _ := f.getPeerRelationshipType(sender)
+		if !isSibling {
+			for _, p := range f.demmonView.Siblings {
+				if peer.PeersEqual(p, sender) {
+					continue
+				}
+				f.broadcastTo(m, p)
 			}
-			f.lazyPush(iHaveMsg, v)
 		}
 	}
+
+	f.lazyPush(iHaveMsg, sender)
+
+	// _, _, parent := f.getPeerRelationshipType(sender)
+	// if parent {
+	// 	for _, p := range f.demmonView.Children {
+	// 		if peer.PeersEqual(p, sender) {
+	// 			continue
+	// 		}
+	// 		f.broadcastTo(m, p)
+	// 	}
+	// 	if f.demmonView.Parent != nil {
+	// 		f.broadcastTo(m, f.demmonView.Parent)
+	// 	}
+	// }
+
+	// if peer.PeersEqual(sender, f.babel.SelfPeer()) {
+	// 	for _, p := range f.demmonView.Children {
+	// 		f.broadcastTo(m, p)
+	// 	}
+
+	// 	for _, p := range f.demmonView.Siblings {
+	// 		f.broadcastTo(m, p)
+
+	// 	}
+	// 	if f.demmonView.Parent != nil {
+	// 		f.broadcastTo(m, f.demmonView.Parent)
+	// 	}
+	// 	return
+	// }
+
+	// sibling, child, parent := f.getPeerRelationshipType(sender)
+	// if parent || sibling {
+	// 	for _, p := range f.demmonView.Siblings {
+	// 		if peer.PeersEqual(p, sender) {
+	// 			continue
+	// 		}
+	// 		f.lazyPush(iHaveMsg, p)
+	// 	}
+	// 	if f.demmonView.Parent != nil {
+	// 		if !peer.PeersEqual(f.demmonView.Parent, sender) {
+	// 			f.lazyPush(iHaveMsg, f.demmonView.Parent)
+	// 		}
+	// 	}
+	// 	for _, p := range f.demmonView.Children {
+	// 		f.broadcastTo(m, p)
+	// 	}
+	// }
+
+	// if child {
+	// 	for _, p := range f.demmonView.Siblings {
+	// 		f.broadcastTo(m, p)
+	// 	}
+	// 	if f.demmonView.Parent != nil {
+	// 		f.broadcastTo(m, f.demmonView.Parent)
+	// 	}
+	// 	for _, v := range f.demmonView.Children {
+	// 		if peer.PeersEqual(v, sender) {
+	// 			continue
+	// 		}
+	// 		f.lazyPush(iHaveMsg, v)
+	// 	}
+	// }
 }
 
 func (f *Flood) regularFlood(m message.Message, sender peer.Peer) {
@@ -205,13 +238,13 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 	// f.logger.Infof("Received gossip message from %s", sender)
 	gossipMsg := m.(shared.GossipMessage)
 
-	if _, ok := f.receivedMessages[gossipMsg.MID]; ok {
-		return
-	}
 	delete(f.missingMessages, gossipMsg.MID)
 	if _, ok := f.ongoingTimers[gossipMsg.MID]; ok {
 		f.babel.CancelTimer(f.ongoingTimers[gossipMsg.MID])
 		delete(f.ongoingTimers, gossipMsg.MID)
+	}
+	if _, ok := f.receivedMessages[gossipMsg.MID]; ok {
+		return
 	}
 	f.babel.SendNotification(shared.DeliverMessageNotification{
 		Message: gossipMsg,
@@ -265,15 +298,15 @@ func (f *Flood) uponIHaveTimeout(t timer.Timer) {
 		}
 
 		if len(messageSources) == 0 {
-			// f.logger.Error("Message source is empty")
+			f.logger.Error("Message source is empty")
 			return
 		}
 		newTimerID := f.babel.RegisterTimer(f.ID(), iHaveTimeoutTimer)
 		f.ongoingTimers[iHaveTimeoutTimer.MID] = newTimerID
 
 		for k, messageSource := range messageSources {
-			delete(messageSources, k)
 			if sibling, child, parent := f.getPeerRelationshipType(messageSource.p); !sibling && !child && !parent {
+				delete(messageSources, k)
 				continue
 			}
 			// f.logger.Infof("Sending GraftMessage for mid %d to %s", iHaveTimeoutTimer.MID, messageSource.p)
@@ -287,29 +320,40 @@ func (f *Flood) uponIHaveTimeout(t timer.Timer) {
 }
 
 func (f *Flood) uponSendIHaveTimer(t timer.Timer) {
+	tmp := []addressedMsg{}
 	for _, v := range f.lazyQueue {
-		// f.logger.Info("Sending IHave message  to " + v.d.String())
-		isSibling, isChildren, isParent := f.getPeerRelationshipType(v.d)
-		if !isSibling && !isChildren && !isParent {
+		if time.Since(v.ts) < 1*time.Second {
+			tmp = append(tmp, v)
 			continue
 		}
-		if f.useUDP {
-			f.babel.SendMessageSideStream(v.m, v.d, v.d.ToUDPAddr(), FloodProtoID, FloodProtoID)
-		} else {
-			f.babel.SendMessage(v.m, v.d, f.ID(), f.ID(), true)
+		for _, p := range f.demmonView.Children {
+			f.broadcastTo(v.m, p)
+		}
+		if f.demmonView.Parent != nil {
+			f.broadcastTo(v.m, f.demmonView.Parent)
+		}
+		if f.isLandmark {
+			for _, p := range f.demmonView.Siblings {
+				f.broadcastTo(v.m, p)
+			}
 		}
 	}
-	f.lazyQueue = nil
+	f.lazyQueue = tmp
 }
 
 func (f *Flood) uponReceiveGraftMessage(sender peer.Peer, m message.Message) {
-	f.logger.Infof("Received graft message from %s", sender)
 	graftMsg := m.(shared.GraftMessage)
 	toSend, ok := f.receivedMessages[graftMsg.MID]
 	if !ok {
-		// f.logger.Errorf("Do not have message %d in order to respond to graft message", graftMsg.MID)
+		f.logger.Panicf("Do not have message %d in order to respond to graft message", graftMsg.MID)
 		return
 	}
+	sibling, child, parent := f.getPeerRelationshipType(sender)
+	if !sibling && !child && !parent {
+		f.logger.Warnf("Received graft message from a peer not in view %s", sender)
+		return
+	}
+	// f.logger.Infof("Received graft message from %s", sender)
 	// f.logger.Infof("Replying to graft message %d from %s", graftMsg.MID, sender.String())
 	f.babel.SendMessage(toSend, sender, f.ID(), f.ID(), true)
 }
@@ -332,14 +376,14 @@ func (f *Flood) uponBroadcastRequest(request request.Request) request.Reply {
 
 func (f *Flood) uponDemmonNodeDownNotification(n notification.Notification) {
 	notif := n.(demmonProto.NodeDownNotification)
-	f.demmonView = &notif.InView
+	f.demmonView = notif.InView
 	f.logger.Info("PEER DOWN!! - " + notif.PeerDown.String())
 	f.logger.Infof("View: %+v", notif.InView)
 }
 
 func (f *Flood) uponDemmonNodeUpNotification(n notification.Notification) {
 	notif := n.(demmonProto.NodeUpNotification)
-	f.demmonView = &notif.InView
+	f.demmonView = notif.InView
 	f.logger.Info("PEER UP!! - " + notif.PeerUp.String())
 	f.logger.Infof("View: %+v", notif.InView)
 }
@@ -389,21 +433,22 @@ func (f *Flood) getPeerRelationshipType(p peer.Peer) (isSibling, isChildren, isP
 
 /* -------------------------------------------------------*/
 
-func NewFloodProtocol(babel protocolManager.ProtocolManager, useC, isDemmon bool) protocol.Protocol {
+func NewFloodProtocol(babel protocolManager.ProtocolManager, useC, isDemmon, isLandmark bool) protocol.Protocol {
 	logger := logs.NewLogger(name)
 	logger.SetLevel(logrus.InfoLevel)
 	return &Flood{
 		mids:             []uint32{},
-		size:             50_000,
+		size:             100_000,
 		r:                rand.New(rand.NewSource(time.Now().UnixNano())),
 		babel:            babel,
 		logger:           logger,
 		neighbors:        make(map[string]peer.Peer),
 		receivedMessages: make(map[uint32]message.Message),
-		demmonView:       nil,
+		demmonView:       demmonProto.InView{},
 		useUDP:           useC,
 		isDemmon:         isDemmon,
 		missingMessages:  map[uint32]map[string]messageSource{},
 		ongoingTimers:    make(map[uint32]int),
+		isLandmark:       isLandmark,
 	}
 }

@@ -2,6 +2,7 @@ package plumtree
 
 import (
 	"flood/shared"
+	"time"
 
 	"github.com/nm-morais/go-babel/pkg/peer"
 )
@@ -31,11 +32,9 @@ func (f *Plumtree) lazyPush(msg shared.GossipMessage, round uint32, sender peer.
 		// 	dst: p,
 		// })
 		f.lazyQueue = append(f.lazyQueue, addressedMsg{
-			d: p,
-			m: shared.IHaveMessage{
-				MID:   msg.MID,
-				Round: round,
-			},
+			d:  p,
+			m:  shared.IHaveMessage{MID: msg.MID, Round: round},
+			ts: time.Now(),
 		})
 	}
 	// for _, msg := range f.lazyQueue {

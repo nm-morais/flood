@@ -56,8 +56,9 @@ type messageSource = struct {
 }
 
 type addressedMsg = struct {
-	d peer.Peer
-	m message.Message
+	d  peer.Peer
+	m  message.Message
+	ts time.Time
 }
 
 func (f *Plumtree) ID() protocol.ID {
@@ -74,7 +75,7 @@ func (f *Plumtree) Logger() *logrus.Logger {
 
 func (f *Plumtree) Start() {
 	t := SendIHaveTimer{
-		duration: 300 * time.Millisecond,
+		duration: 1 * time.Second,
 	}
 	f.babel.RegisterPeriodicTimer(f.ID(), t, false)
 }
@@ -156,7 +157,7 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 		// }
 		// }
 		// f.pruneBackoff[sender.String()] = time.Now()
-		f.logger.Infof("Received duplicate message %d from %s", gossipMsg.MID, sender)
+		// f.logger.Infof("Received duplicate message %d from %s", gossipMsg.MID, sender)
 		f.addToLazy(sender)
 		f.removeFromEager(sender)
 		f.sendMessage(PruneMessage{}, sender)
@@ -187,7 +188,12 @@ func (f *Plumtree) uponReceiveIHaveMessage(sender peer.Peer, m message.Message) 
 }
 
 func (f *Plumtree) uponSendIHaveTimer(t timer.Timer) {
+	tmp := []addressedMsg{}
 	for _, v := range f.lazyQueue {
+		if time.Since(v.ts) < 1*time.Second {
+			tmp = append(tmp, v)
+			continue
+		}
 		if _, ok := f.view[v.d.String()]; !ok {
 			f.logger.Warnf("Not sending IHave as peer %s is not in view ", v.d.String())
 			continue
@@ -238,9 +244,8 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 		f.ongoingTimers[iHaveTimeoutTimer.mid] = newTimerID
 		for k, messageSource := range messageSources {
 			// f.logger.Infof("Sending GraftMessage for mid %d to %s", iHaveTimeoutTimer.mid, messageSource.p)
-
 			if _, ok := f.view[messageSource.p.String()]; !ok {
-				delete(f.view, k)
+				delete(messageSources, k)
 				continue
 			}
 			f.sendMessage(shared.GraftMessage{
@@ -320,7 +325,7 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) pro
 		r:                rand.New(rand.NewSource(time.Now().UnixNano())),
 		babel:            babel,
 		logger:           logger,
-		size:             50_000,
+		size:             100_000,
 		view:             map[string]peer.Peer{},
 		lazyPushPeers:    map[string]peer.Peer{},
 		eagerPushPeers:   map[string]peer.Peer{},
