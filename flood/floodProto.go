@@ -307,13 +307,14 @@ func (f *Flood) uponIHaveTimeout(t timer.Timer) {
 		for k, messageSource := range messageSources {
 			if sibling, child, parent := f.getPeerRelationshipType(messageSource.p); !sibling && !child && !parent {
 				delete(messageSources, k)
+				f.missingMessages[iHaveTimeoutTimer.MID] = messageSources
 				continue
 			}
 			// f.logger.Infof("Sending GraftMessage for mid %d to %s", iHaveTimeoutTimer.MID, messageSource.p)
 			f.babel.SendMessage(shared.GraftMessage{
 				MID:   iHaveTimeoutTimer.MID,
 				Round: messageSource.r,
-			}, messageSource.p, f.ID(), f.ID(), true)
+			}, messageSource.p, f.ID(), f.ID(), false)
 			break
 		}
 	}

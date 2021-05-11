@@ -81,14 +81,14 @@ func (b IHaveTimeoutTimer) Duration() time.Duration {
 
 const SendIHaveTimerType = 41205
 
-type SendIHaveTimer struct {
-	duration time.Duration
-}
+// type SendIHaveTimer struct {
+// 	duration time.Duration
+// }
 
-func (b SendIHaveTimer) ID() timer.ID {
-	return SendIHaveTimerType
-}
+// func (b SendIHaveTimer) ID() timer.ID {
+// 	return SendIHaveTimerType
+// }
 
-func (b SendIHaveTimer) Duration() time.Duration {
-	return b.duration
-}
+// func (b SendIHaveTimer) Duration() time.Duration {
+// 	return b.duration
+// }

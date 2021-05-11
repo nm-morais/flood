@@ -44,7 +44,7 @@ type Plumtree struct {
 	receivedMessages map[uint32]message.Message
 	ongoingTimers    map[uint32]int
 
-	lazyQueue  []addressedMsg
+	// lazyQueue  []addressedMsg
 	eagerQueue map[string]message.Message
 
 	useUDP bool
@@ -55,11 +55,11 @@ type messageSource = struct {
 	r uint32
 }
 
-type addressedMsg = struct {
-	d  peer.Peer
-	m  message.Message
-	ts time.Time
-}
+// type addressedMsg = struct {
+// 	d  peer.Peer
+// 	m  message.Message
+// 	ts time.Time
+// }
 
 func (f *Plumtree) ID() protocol.ID {
 	return PlumtreeProtoID
@@ -74,10 +74,10 @@ func (f *Plumtree) Logger() *logrus.Logger {
 }
 
 func (f *Plumtree) Start() {
-	t := SendIHaveTimer{
-		duration: 1 * time.Second,
-	}
-	f.babel.RegisterPeriodicTimer(f.ID(), t, false)
+	// t := SendIHaveTimer{
+	// 	duration: 1 * time.Second,
+	// }
+	// f.babel.RegisterPeriodicTimer(f.ID(), t, false)
 }
 
 func (f *Plumtree) Init() {
@@ -92,7 +92,7 @@ func (f *Plumtree) Init() {
 	f.babel.RegisterMessageHandler(f.ID(), shared.IHaveMessage{}, f.uponReceiveIHaveMessage)
 
 	f.babel.RegisterTimerHandler(f.ID(), IHaveTimeoutTimerType, f.uponIHaveTimeout)
-	f.babel.RegisterTimerHandler(f.ID(), SendIHaveTimerType, f.uponSendIHaveTimer)
+	// f.babel.RegisterTimerHandler(f.ID(), SendIHaveTimerType, f.uponSendIHaveTimer)
 
 }
 
@@ -187,22 +187,22 @@ func (f *Plumtree) uponReceiveIHaveMessage(sender peer.Peer, m message.Message) 
 	}
 }
 
-func (f *Plumtree) uponSendIHaveTimer(t timer.Timer) {
-	tmp := []addressedMsg{}
-	for _, v := range f.lazyQueue {
-		if time.Since(v.ts) < 1*time.Second {
-			tmp = append(tmp, v)
-			continue
-		}
-		if _, ok := f.view[v.d.String()]; !ok {
-			f.logger.Warnf("Not sending IHave as peer %s is not in view ", v.d.String())
-			continue
-		}
-		f.logger.Info("Sending IHave message  to " + v.d.String())
-		f.sendMessage(v.m, v.d)
-	}
-	f.lazyQueue = nil
-}
+// func (f *Plumtree) uponSendIHaveTimer(t timer.Timer) {
+// 	tmp := []addressedMsg{}
+// 	for _, v := range f.lazyQueue {
+// 		if time.Since(v.ts) < 1*time.Second {
+// 			tmp = append(tmp, v)
+// 			continue
+// 		}
+// 		if _, ok := f.view[v.d.String()]; !ok {
+// 			f.logger.Warnf("Not sending IHave as peer %s is not in view ", v.d.String())
+// 			continue
+// 		}
+// 		f.logger.Info("Sending IHave message  to " + v.d.String())
+// 		f.sendMessage(v.m, v.d)
+// 	}
+// 	f.lazyQueue = tmp
+// }
 
 func (f *Plumtree) uponReceivePruneMessage(sender peer.Peer, m message.Message) {
 	// f.logger.Infof("Received prune message from %s", sender)
@@ -212,15 +212,21 @@ func (f *Plumtree) uponReceivePruneMessage(sender peer.Peer, m message.Message) 
 
 func (f *Plumtree) uponReceiveGraftMessage(sender peer.Peer, m message.Message) {
 	f.logger.Infof("Received graft message from %s", sender)
-	graftMsg := m.(shared.GraftMessage)
-	f.addToEager(sender)
-	f.removeFromLazy(sender)
+	if _, ok := f.view[sender.String()]; !ok {
+		f.logger.Error("Sender of graft message is not a neighbor")
+		return
+	}
 
+	graftMsg := m.(shared.GraftMessage)
 	toSend, ok := f.receivedMessages[graftMsg.MID]
 	if !ok {
 		f.logger.Errorf("Do not have message %d in order to respond to graft message", graftMsg.MID)
 		return
 	}
+
+	f.addToEager(sender)
+	f.removeFromLazy(sender)
+
 	// f.logger.Infof("Replying to graft message %d from %s", graftMsg.MID, sender.String())
 	f.sendMessage(toSend, sender)
 }
@@ -248,6 +254,7 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 				delete(messageSources, k)
 				continue
 			}
+
 			f.sendMessage(shared.GraftMessage{
 				MID:   iHaveTimeoutTimer.mid,
 				Round: messageSource.r,
@@ -287,6 +294,7 @@ func (f *Plumtree) uponBroadcastRequest(request request.Request) request.Reply {
 		f.mids = f.mids[1:]
 	}
 	f.eagerPush(msg, 1, f.babel.SelfPeer())
+	f.lazyPush(msg, 1, f.babel.SelfPeer())
 	return nil
 }
 
@@ -299,10 +307,13 @@ func (f *Plumtree) uponNeighborDownNotification(n notification.Notification) {
 		f.logger.Panic(err)
 	}
 	// delete(f.neighbors, notif.PeerDown.String())
-	f.logger.Info("PEER DOWN!! - " + notif.PeerDown.String())
 	f.view = notif.View
 	f.removeFromEager(notif.PeerDown)
 	f.removeFromLazy(notif.PeerDown)
+	f.logger.Info("PEER DOWN!! - " + notif.PeerDown.String())
+	f.logger.Infof("View:, %+v", f.view)
+	f.logger.Infof("Eager:, %+v", f.eagerPushPeers)
+	f.logger.Infof("Lazy:, %+v", f.lazyPushPeers)
 }
 
 func (f *Plumtree) uponNeighborUpNotification(n notification.Notification) {
@@ -314,6 +325,9 @@ func (f *Plumtree) uponNeighborUpNotification(n notification.Notification) {
 	f.view = notif.View
 	f.addToEager(notif.PeerUp)
 	f.logger.Info("PEER UP!! - " + notif.PeerUp.String())
+	f.logger.Infof("View:, %+v", f.view)
+	f.logger.Infof("Eager:, %+v", f.eagerPushPeers)
+	f.logger.Infof("Lazy:, %+v", f.lazyPushPeers)
 }
 
 /* -------------------------------------------------------*/
@@ -333,8 +347,8 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) pro
 		mids:             []uint32{},
 		receivedMessages: map[uint32]message.Message{},
 		ongoingTimers:    make(map[uint32]int),
-		lazyQueue:        []addressedMsg{},
-		eagerQueue:       map[string]message.Message{},
-		useUDP:           useUDP,
+		// lazyQueue:        []addressedMsg{},
+		eagerQueue: map[string]message.Message{},
+		useUDP:     useUDP,
 	}
 }

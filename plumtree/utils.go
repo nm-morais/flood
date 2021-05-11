@@ -2,7 +2,6 @@ package plumtree
 
 import (
 	"flood/shared"
-	"time"
 
 	"github.com/nm-morais/go-babel/pkg/peer"
 )
@@ -13,12 +12,13 @@ func (f *Plumtree) eagerPush(msg shared.GossipMessage, round uint32, sender peer
 		if peer.PeersEqual(sender, p) {
 			continue
 		}
-		f.babel.SendMessage(msg, p, f.ID(), f.ID(), false)
+		f.sendMessage(msg, p)
 	}
 }
 
 func (f *Plumtree) lazyPush(msg shared.GossipMessage, round uint32, sender peer.Peer) {
 	msg.Hop = round
+	toSend := shared.IHaveMessage{MID: msg.MID, Round: round}
 	for _, p := range f.lazyPushPeers {
 		if peer.PeersEqual(sender, p) {
 			continue
@@ -31,11 +31,12 @@ func (f *Plumtree) lazyPush(msg shared.GossipMessage, round uint32, sender peer.
 		// 	},
 		// 	dst: p,
 		// })
-		f.lazyQueue = append(f.lazyQueue, addressedMsg{
-			d:  p,
-			m:  shared.IHaveMessage{MID: msg.MID, Round: round},
-			ts: time.Now(),
-		})
+		// f.lazyQueue = append(f.lazyQueue, addressedMsg{
+		// 	d:  p,
+		// 	m:  ,
+		// 	ts: time.Now(),
+		// })
+		f.sendMessage(toSend, p)
 	}
 	// for _, msg := range f.lazyQueue {
 	// 	f.babel.SendMessage(msg.m, msg.d, f.ID(), f.ID(), false)

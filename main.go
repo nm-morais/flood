@@ -215,7 +215,6 @@ func main() {
 			NrPeersToMeasureRandom:                   1,
 			MeasureNewPeersRefreshTickDuration:       7 * time.Second,
 			MaxMeasuredPeers:                         15,
-			EvalMeasuredPeersRefreshTickDuration:     7 * time.Second,
 			MinLatencyImprovementToImprovePosition:   50 * time.Millisecond,
 			CheckChildenSizeTimerDuration:            10 * time.Second,
 			EmitWalkProbability:                      0.33,
