@@ -254,7 +254,7 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 				delete(messageSources, k)
 				continue
 			}
-
+			delete(messageSources, k)
 			f.sendMessage(shared.GraftMessage{
 				MID:   iHaveTimeoutTimer.mid,
 				Round: messageSource.r,

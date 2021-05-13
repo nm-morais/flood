@@ -305,8 +305,8 @@ func (f *Flood) uponIHaveTimeout(t timer.Timer) {
 		f.ongoingTimers[iHaveTimeoutTimer.MID] = newTimerID
 
 		for k, messageSource := range messageSources {
+			delete(messageSources, k)
 			if sibling, child, parent := f.getPeerRelationshipType(messageSource.p); !sibling && !child && !parent {
-				delete(messageSources, k)
 				f.missingMessages[iHaveTimeoutTimer.MID] = messageSources
 				continue
 			}

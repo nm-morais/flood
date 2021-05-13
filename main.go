@@ -191,7 +191,7 @@ func main() {
 			}
 		}
 		conf := &demmon.DemmonTreeConfig{
-			MaxDiffForBWScore:                        15,
+			MaxDiffForBWScore:                        5000,
 			BandwidthScore:                           int(*bwScore),
 			UseBwScore:                               *useBW,
 			Landmarks:                                landmarks,
@@ -203,7 +203,7 @@ func main() {
 			RejoinTimerDuration:                      10 * time.Second,
 			NrPeersToBecomeChildrenPerParentInAbsorb: 3,
 			NrPeersToBecomeParentInAbsorb:            2,
-			PhiLevelForNodeDown:                      3,
+			PhiLevelForNodeDown:                      8,
 			MaxPeersInEView:                          20,
 			EmitWalkTimeout:                          8 * time.Second,
 			NrHopsToIgnoreWalk:                       2,
@@ -216,7 +216,7 @@ func main() {
 			MeasureNewPeersRefreshTickDuration:       7 * time.Second,
 			MaxMeasuredPeers:                         15,
 			MinLatencyImprovementToImprovePosition:   50 * time.Millisecond,
-			CheckChildenSizeTimerDuration:            10 * time.Second,
+			CheckChildenSizeTimerDuration:            7 * time.Second,
 			EmitWalkProbability:                      0.33,
 			BiasedWalkProbability:                    0.2,
 			AttemptImprovePositionProbability:        0.5,
