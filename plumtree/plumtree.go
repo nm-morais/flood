@@ -250,11 +250,10 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 		f.ongoingTimers[iHaveTimeoutTimer.mid] = newTimerID
 		for k, messageSource := range messageSources {
 			// f.logger.Infof("Sending GraftMessage for mid %d to %s", iHaveTimeoutTimer.mid, messageSource.p)
+			delete(messageSources, k)
 			if _, ok := f.view[messageSource.p.String()]; !ok {
-				delete(messageSources, k)
 				continue
 			}
-			delete(messageSources, k)
 			f.sendMessage(shared.GraftMessage{
 				MID:   iHaveTimeoutTimer.mid,
 				Round: messageSource.r,
