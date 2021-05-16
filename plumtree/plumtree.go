@@ -25,7 +25,7 @@ const (
 	name            = "Plumtree"
 
 	IHaveTimeout = 1 * time.Second
-	// PruneBackoff = 1 * time.Second
+	PruneBackoff = 1 * time.Second
 )
 
 type Plumtree struct {
@@ -34,7 +34,7 @@ type Plumtree struct {
 	logger *logrus.Logger
 	size   int
 
-	// pruneBackoff   map[string]time.Time
+	pruneBackoff     map[string]time.Time
 	view             map[string]peer.Peer
 	lazyPushPeers    map[string]peer.Peer
 	eagerPushPeers   map[string]peer.Peer
@@ -136,13 +136,13 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 		f.eagerPush(gossipMsg, gossipMsg.Hop, sender)
 		f.lazyPush(gossipMsg, gossipMsg.Hop, sender)
 	} else {
-		// lastTime, ok := f.pruneBackoff[sender.String()]
-		// if ok {
-		// if time.Since(lastTime) < PruneBackoff {
-		// 	return
-		// }
-		// }
-		// f.pruneBackoff[sender.String()] = time.Now()
+		lastTime, ok := f.pruneBackoff[sender.String()]
+		if ok {
+			if time.Since(lastTime) < PruneBackoff {
+				return
+			}
+		}
+		f.pruneBackoff[sender.String()] = time.Now()
 		// f.logger.Infof("Received duplicate message %d from %s", gossipMsg.MID, sender)
 		f.addToLazy(sender)
 		f.removeFromEager(sender)
@@ -213,6 +213,7 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 				MID:   mid,
 				Round: messageSource.r,
 			}, messageSource.p)
+			missingMsg.ts = time.Now()
 			break
 		}
 		if len(missingMsg.sources) == 0 {
@@ -285,12 +286,13 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) pro
 		babel:            babel,
 		logger:           logger,
 		size:             100_000,
+		pruneBackoff:     map[string]time.Time{},
 		view:             map[string]peer.Peer{},
 		lazyPushPeers:    map[string]peer.Peer{},
 		eagerPushPeers:   map[string]peer.Peer{},
 		missingMessages:  map[uint32]*missingMessage{},
-		receivedMessages: map[uint32]message.Message{},
 		mids:             []uint32{},
+		receivedMessages: map[uint32]message.Message{},
 		useUDP:           useUDP,
 	}
 }

@@ -193,6 +193,7 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 		Message: gossipMsg,
 		From:    sender,
 	})
+	gossipMsg.Hop += 1
 	f.receivedMessages[gossipMsg.MID] = gossipMsg
 	f.mids = append(f.mids, gossipMsg.MID)
 	if len(f.mids) > f.size {
@@ -200,7 +201,6 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 		f.mids = f.mids[1:]
 		delete(f.receivedMessages, toPop)
 	}
-	gossipMsg.Hop += 1
 	if f.isDemmon {
 		f.demmonFlood(gossipMsg, sender)
 	} else {
@@ -232,11 +232,6 @@ func (f *Flood) uponReceiveIHaveMessage(sender peer.Peer, m message.Message) {
 func (f *Flood) uponIHaveTimeout(t timer.Timer) {
 	for mid, missingMsg := range f.missingMessages {
 		// f.logger.Infof("IHaveTimeoutTimer trigger for missing message %d", iHaveTimeoutTimer.MID)
-		if len(missingMsg.sources) == 0 {
-			delete(f.missingMessages, mid)
-			continue
-		}
-
 		if time.Since(missingMsg.ts) < IHaveTimeout {
 			continue
 		}
@@ -251,6 +246,7 @@ func (f *Flood) uponIHaveTimeout(t timer.Timer) {
 				MID:   mid,
 				Round: messageSource.r,
 			}, messageSource.p, f.ID(), f.ID(), false)
+			missingMsg.ts = time.Now()
 			break
 		}
 		if len(missingMsg.sources) == 0 {
