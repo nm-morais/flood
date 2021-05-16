@@ -35,19 +35,13 @@ type Plumtree struct {
 	size   int
 
 	// pruneBackoff   map[string]time.Time
-	view           map[string]peer.Peer
-	lazyPushPeers  map[string]peer.Peer
-	eagerPushPeers map[string]peer.Peer
-
-	missingMessages  map[uint32]map[string]messageSource
+	view             map[string]peer.Peer
+	lazyPushPeers    map[string]peer.Peer
+	eagerPushPeers   map[string]peer.Peer
+	missingMessages  map[uint32]*missingMessage
 	mids             []uint32
 	receivedMessages map[uint32]message.Message
-	ongoingTimers    map[uint32]int
-
-	// lazyQueue  []addressedMsg
-	eagerQueue map[string]message.Message
-
-	useUDP bool
+	useUDP           bool
 }
 
 type messageSource = struct {
@@ -55,11 +49,10 @@ type messageSource = struct {
 	r uint32
 }
 
-// type addressedMsg = struct {
-// 	d  peer.Peer
-// 	m  message.Message
-// 	ts time.Time
-// }
+type missingMessage struct {
+	ts      time.Time
+	sources map[string]messageSource
+}
 
 func (f *Plumtree) ID() protocol.ID {
 	return PlumtreeProtoID
@@ -74,10 +67,9 @@ func (f *Plumtree) Logger() *logrus.Logger {
 }
 
 func (f *Plumtree) Start() {
-	// t := SendIHaveTimer{
-	// 	duration: 1 * time.Second,
-	// }
-	// f.babel.RegisterPeriodicTimer(f.ID(), t, false)
+	f.babel.RegisterPeriodicTimer(f.ID(), IHaveTimeoutTimer{
+		duration: IHaveTimeout / 2,
+	}, false)
 }
 
 func (f *Plumtree) Init() {
@@ -92,7 +84,6 @@ func (f *Plumtree) Init() {
 	f.babel.RegisterMessageHandler(f.ID(), shared.IHaveMessage{}, f.uponReceiveIHaveMessage)
 
 	f.babel.RegisterTimerHandler(f.ID(), IHaveTimeoutTimerType, f.uponIHaveTimeout)
-	// f.babel.RegisterTimerHandler(f.ID(), SendIHaveTimerType, f.uponSendIHaveTimer)
 
 }
 
@@ -139,11 +130,6 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 			f.mids = f.mids[1:]
 		}
 
-		if tID, ok := f.ongoingTimers[gossipMsg.MID]; ok {
-			f.babel.CancelTimer(tID)
-			delete(f.ongoingTimers, uint32(tID))
-		}
-
 		f.addToEager(sender)
 		f.removeFromLazy(sender)
 
@@ -163,46 +149,26 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 		f.sendMessage(PruneMessage{}, sender)
 	}
 }
-
 func (f *Plumtree) uponReceiveIHaveMessage(sender peer.Peer, m message.Message) {
-	graftMsg := m.(shared.IHaveMessage)
-
-	if _, ok := f.receivedMessages[graftMsg.MID]; !ok {
-		// f.logger.Infof("Received IHave for MISSING message %d from %s", graftMsg.MID, sender)
-		if _, ok := f.ongoingTimers[graftMsg.MID]; !ok {
-			tID := f.babel.RegisterTimer(f.ID(), IHaveTimeoutTimer{
-				duration: IHaveTimeout,
-				mid:      graftMsg.MID,
-			})
-			f.ongoingTimers[graftMsg.MID] = tID
+	iHaveMsg := m.(shared.IHaveMessage)
+	if _, ok := f.receivedMessages[iHaveMsg.MID]; !ok {
+		// f.logger.Infof("Received IHave for MISSING message %d from %s", iHaveMsg.MID, sender)
+		if _, ok := f.missingMessages[iHaveMsg.MID]; !ok {
+			f.missingMessages[iHaveMsg.MID] = &missingMessage{
+				ts: time.Now(),
+				sources: make(map[string]struct {
+					p peer.Peer
+					r uint32
+				}),
+			}
 		}
-		if _, ok := f.missingMessages[graftMsg.MID]; !ok {
-			f.missingMessages[graftMsg.MID] = make(map[string]messageSource)
-		}
-		// f.logger.Infof("Set up IHaveTimeoutTimer for message %d", graftMsg.MID)
-		f.missingMessages[graftMsg.MID][sender.String()] = messageSource{
+		// f.logger.Infof("Set up IHaveTimeoutTimer for message %d", iHaveMsg.MID)
+		f.missingMessages[iHaveMsg.MID].sources[sender.String()] = messageSource{
 			p: sender,
-			r: graftMsg.Round,
+			r: iHaveMsg.Round,
 		}
 	}
 }
-
-// func (f *Plumtree) uponSendIHaveTimer(t timer.Timer) {
-// 	tmp := []addressedMsg{}
-// 	for _, v := range f.lazyQueue {
-// 		if time.Since(v.ts) < 1*time.Second {
-// 			tmp = append(tmp, v)
-// 			continue
-// 		}
-// 		if _, ok := f.view[v.d.String()]; !ok {
-// 			f.logger.Warnf("Not sending IHave as peer %s is not in view ", v.d.String())
-// 			continue
-// 		}
-// 		f.logger.Info("Sending IHave message  to " + v.d.String())
-// 		f.sendMessage(v.m, v.d)
-// 	}
-// 	f.lazyQueue = tmp
-// }
 
 func (f *Plumtree) uponReceivePruneMessage(sender peer.Peer, m message.Message) {
 	// f.logger.Infof("Received prune message from %s", sender)
@@ -211,7 +177,7 @@ func (f *Plumtree) uponReceivePruneMessage(sender peer.Peer, m message.Message) 
 }
 
 func (f *Plumtree) uponReceiveGraftMessage(sender peer.Peer, m message.Message) {
-	f.logger.Infof("Received graft message from %s", sender)
+	// f.logger.Infof("Received graft message from %s", sender)
 	if _, ok := f.view[sender.String()]; !ok {
 		f.logger.Error("Sender of graft message is not a neighbor")
 		return
@@ -226,43 +192,34 @@ func (f *Plumtree) uponReceiveGraftMessage(sender peer.Peer, m message.Message) 
 
 	f.addToEager(sender)
 	f.removeFromLazy(sender)
-
 	// f.logger.Infof("Replying to graft message %d from %s", graftMsg.MID, sender.String())
 	f.sendMessage(toSend, sender)
 }
 
 func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
-	iHaveTimeoutTimer := t.(IHaveTimeoutTimer)
-
-	if _, ok := f.receivedMessages[iHaveTimeoutTimer.mid]; !ok {
-		// f.logger.Infof("IHaveTimeoutTimer trigger for missing message %d", iHaveTimeoutTimer.mid)
-		messageSources, ok := f.missingMessages[iHaveTimeoutTimer.mid]
-		if !ok {
-			f.logger.Errorf("Source missing %d", iHaveTimeoutTimer.mid)
-			return
+	for mid, missingMsg := range f.missingMessages {
+		// f.logger.Infof("IHaveTimeoutTimer trigger for missing message %d", iHaveTimeoutTimer.MID)
+		if time.Since(missingMsg.ts) < IHaveTimeout {
+			continue
 		}
 
-		if len(messageSources) == 0 {
-			f.logger.Error("Message source is empty")
-			return
-		}
-		newTimerID := f.babel.RegisterTimer(f.ID(), iHaveTimeoutTimer)
-		f.ongoingTimers[iHaveTimeoutTimer.mid] = newTimerID
-		for k, messageSource := range messageSources {
-			// f.logger.Infof("Sending GraftMessage for mid %d to %s", iHaveTimeoutTimer.mid, messageSource.p)
-			delete(messageSources, k)
-			if _, ok := f.view[messageSource.p.String()]; !ok {
+		for k, messageSource := range missingMsg.sources {
+			if f.view[messageSource.p.String()] == nil {
+				delete(missingMsg.sources, k)
 				continue
 			}
+			// f.logger.Infof("Sending GraftMessage for mid %d to %s", mid, messageSource.p)
 			f.sendMessage(shared.GraftMessage{
-				MID:   iHaveTimeoutTimer.mid,
+				MID:   mid,
 				Round: messageSource.r,
 			}, messageSource.p)
 			break
 		}
+		if len(missingMsg.sources) == 0 {
+			delete(f.missingMessages, mid)
+		}
 	}
 }
-
 func (f *Plumtree) sendMessage(m message.Message, target peer.Peer) {
 	if f.useUDP {
 		f.babel.SendMessageSideStream(m, target, target.ToUDPAddr(), f.ID(), f.ID())
@@ -331,12 +288,9 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) pro
 		view:             map[string]peer.Peer{},
 		lazyPushPeers:    map[string]peer.Peer{},
 		eagerPushPeers:   map[string]peer.Peer{},
-		missingMessages:  map[uint32]map[string]messageSource{},
-		mids:             []uint32{},
+		missingMessages:  map[uint32]*missingMessage{},
 		receivedMessages: map[uint32]message.Message{},
-		ongoingTimers:    make(map[uint32]int),
-		// lazyQueue:        []addressedMsg{},
-		eagerQueue: map[string]message.Message{},
-		useUDP:     useUDP,
+		mids:             []uint32{},
+		useUDP:           useUDP,
 	}
 }

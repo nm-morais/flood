@@ -68,7 +68,6 @@ const IHaveTimeoutTimerType = 41204
 
 type IHaveTimeoutTimer struct {
 	duration time.Duration
-	mid      uint32
 }
 
 func (b IHaveTimeoutTimer) ID() timer.ID {
@@ -78,17 +77,3 @@ func (b IHaveTimeoutTimer) ID() timer.ID {
 func (b IHaveTimeoutTimer) Duration() time.Duration {
 	return b.duration
 }
-
-const SendIHaveTimerType = 41205
-
-// type SendIHaveTimer struct {
-// 	duration time.Duration
-// }
-
-// func (b SendIHaveTimer) ID() timer.ID {
-// 	return SendIHaveTimerType
-// }
-
-// func (b SendIHaveTimer) Duration() time.Duration {
-// 	return b.duration
-// }

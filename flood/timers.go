@@ -68,7 +68,6 @@ const IHaveTimeoutTimerType = 41204
 
 type IHaveTimeoutTimer struct {
 	duration time.Duration
-	MID      uint32
 }
 
 func (b IHaveTimeoutTimer) ID() timer.ID {

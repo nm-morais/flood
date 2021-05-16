@@ -1,6 +1,8 @@
 package flood
 
 import (
+	crypto_rand "crypto/rand"
+	"encoding/binary"
 	"flood/shared"
 	"math/rand"
 	"reflect"
@@ -32,10 +34,9 @@ type addressedMsg = struct {
 
 //Messages types follow x1xx
 const (
-	SendIHaveDelay = 1 * time.Second
-	IHaveTimeout   = 2 * time.Second
-	FloodProtoID   = 21000
-	name           = "Flood"
+	IHaveTimeout = 1 * time.Second
+	FloodProtoID = 21000
+	name         = "Flood"
 )
 
 type Flood struct {
@@ -50,9 +51,13 @@ type Flood struct {
 	demmonView       demmonProto.InView
 	useUDP           bool
 	isDemmon         bool
-	missingMessages  map[uint32]map[string]messageSource
-	ongoingTimers    map[uint32]int
+	missingMessages  map[uint32]*missingMessage
 	lazyQueue        []addressedMsg
+}
+
+type missingMessage struct {
+	ts      time.Time
+	sources map[string]messageSource
 }
 
 func (f *Flood) ID() protocol.ID {
@@ -68,10 +73,12 @@ func (f *Flood) Logger() *logrus.Logger {
 }
 
 func (f *Flood) Start() {
-	t := SendIHaveTimer{
+	f.babel.RegisterPeriodicTimer(f.ID(), SendIHaveTimer{
 		duration: 1 * time.Second,
-	}
-	f.babel.RegisterPeriodicTimer(f.ID(), t, false)
+	}, false)
+	f.babel.RegisterPeriodicTimer(f.ID(), IHaveTimeoutTimer{
+		duration: IHaveTimeout / 2,
+	}, false)
 }
 
 func (f *Flood) Init() {
@@ -130,12 +137,17 @@ func (f *Flood) lazyPush(m shared.IHaveMessage, p peer.Peer) {
 }
 
 func (f *Flood) demmonFlood(m shared.GossipMessage, sender peer.Peer) {
+	iHaveMsg := shared.IHaveMessage{
+		MID:   m.MID,
+		Round: m.Hop,
+	}
 	for _, p := range f.demmonView.Children {
 		if peer.PeersEqual(p, sender) {
 			continue
 		}
 		f.broadcastTo(m, p)
 	}
+
 	if f.demmonView.Parent != nil {
 		if !peer.PeersEqual(f.demmonView.Parent, sender) {
 			f.broadcastTo(m, f.demmonView.Parent)
@@ -153,71 +165,8 @@ func (f *Flood) demmonFlood(m shared.GossipMessage, sender peer.Peer) {
 			}
 		}
 	}
-	f.lazyPush(shared.IHaveMessage{
-		MID:   m.MID,
-		Round: m.Hop,
-	}, sender)
 
-	// _, _, parent := f.getPeerRelationshipType(sender)
-	// if parent {
-	// 	for _, p := range f.demmonView.Children {
-	// 		if peer.PeersEqual(p, sender) {
-	// 			continue
-	// 		}
-	// 		f.broadcastTo(m, p)
-	// 	}
-	// 	if f.demmonView.Parent != nil {
-	// 		f.broadcastTo(m, f.demmonView.Parent)
-	// 	}
-	// }
-
-	// if peer.PeersEqual(sender, f.babel.SelfPeer()) {
-	// 	for _, p := range f.demmonView.Children {
-	// 		f.broadcastTo(m, p)
-	// 	}
-
-	// 	for _, p := range f.demmonView.Siblings {
-	// 		f.broadcastTo(m, p)
-
-	// 	}
-	// 	if f.demmonView.Parent != nil {
-	// 		f.broadcastTo(m, f.demmonView.Parent)
-	// 	}
-	// 	return
-	// }
-
-	// sibling, child, parent := f.getPeerRelationshipType(sender)
-	// if parent || sibling {
-	// 	for _, p := range f.demmonView.Siblings {
-	// 		if peer.PeersEqual(p, sender) {
-	// 			continue
-	// 		}
-	// 		f.lazyPush(iHaveMsg, p)
-	// 	}
-	// 	if f.demmonView.Parent != nil {
-	// 		if !peer.PeersEqual(f.demmonView.Parent, sender) {
-	// 			f.lazyPush(iHaveMsg, f.demmonView.Parent)
-	// 		}
-	// 	}
-	// 	for _, p := range f.demmonView.Children {
-	// 		f.broadcastTo(m, p)
-	// 	}
-	// }
-
-	// if child {
-	// 	for _, p := range f.demmonView.Siblings {
-	// 		f.broadcastTo(m, p)
-	// 	}
-	// 	if f.demmonView.Parent != nil {
-	// 		f.broadcastTo(m, f.demmonView.Parent)
-	// 	}
-	// 	for _, v := range f.demmonView.Children {
-	// 		if peer.PeersEqual(v, sender) {
-	// 			continue
-	// 		}
-	// 		f.lazyPush(iHaveMsg, v)
-	// 	}
-	// }
+	f.lazyPush(iHaveMsg, sender)
 }
 
 func (f *Flood) regularFlood(m message.Message, sender peer.Peer) {
@@ -237,10 +186,6 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 	gossipMsg := m.(shared.GossipMessage)
 
 	delete(f.missingMessages, gossipMsg.MID)
-	if _, ok := f.ongoingTimers[gossipMsg.MID]; ok {
-		f.babel.CancelTimer(f.ongoingTimers[gossipMsg.MID])
-		delete(f.ongoingTimers, gossipMsg.MID)
-	}
 	if _, ok := f.receivedMessages[gossipMsg.MID]; ok {
 		return
 	}
@@ -248,7 +193,6 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 		Message: gossipMsg,
 		From:    sender,
 	})
-	gossipMsg.Hop += 1
 	f.receivedMessages[gossipMsg.MID] = gossipMsg
 	f.mids = append(f.mids, gossipMsg.MID)
 	if len(f.mids) > f.size {
@@ -256,6 +200,7 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 		f.mids = f.mids[1:]
 		delete(f.receivedMessages, toPop)
 	}
+	gossipMsg.Hop += 1
 	if f.isDemmon {
 		f.demmonFlood(gossipMsg, sender)
 	} else {
@@ -267,18 +212,17 @@ func (f *Flood) uponReceiveIHaveMessage(sender peer.Peer, m message.Message) {
 	iHaveMsg := m.(shared.IHaveMessage)
 	if _, ok := f.receivedMessages[iHaveMsg.MID]; !ok {
 		// f.logger.Infof("Received IHave for MISSING message %d from %s", iHaveMsg.MID, sender)
-		if _, ok := f.ongoingTimers[iHaveMsg.MID]; !ok {
-			tID := f.babel.RegisterTimer(f.ID(), IHaveTimeoutTimer{
-				duration: IHaveTimeout,
-				MID:      iHaveMsg.MID,
-			})
-			f.ongoingTimers[iHaveMsg.MID] = tID
-		}
 		if _, ok := f.missingMessages[iHaveMsg.MID]; !ok {
-			f.missingMessages[iHaveMsg.MID] = make(map[string]messageSource)
+			f.missingMessages[iHaveMsg.MID] = &missingMessage{
+				ts: time.Now(),
+				sources: make(map[string]struct {
+					p peer.Peer
+					r uint32
+				}),
+			}
 		}
 		// f.logger.Infof("Set up IHaveTimeoutTimer for message %d", iHaveMsg.MID)
-		f.missingMessages[iHaveMsg.MID][sender.String()] = messageSource{
+		f.missingMessages[iHaveMsg.MID].sources[sender.String()] = messageSource{
 			p: sender,
 			r: iHaveMsg.Round,
 		}
@@ -286,34 +230,31 @@ func (f *Flood) uponReceiveIHaveMessage(sender peer.Peer, m message.Message) {
 }
 
 func (f *Flood) uponIHaveTimeout(t timer.Timer) {
-	iHaveTimeoutTimer := t.(IHaveTimeoutTimer)
-	if _, ok := f.receivedMessages[iHaveTimeoutTimer.MID]; !ok {
+	for mid, missingMsg := range f.missingMessages {
 		// f.logger.Infof("IHaveTimeoutTimer trigger for missing message %d", iHaveTimeoutTimer.MID)
-		messageSources, ok := f.missingMessages[iHaveTimeoutTimer.MID]
-		if !ok {
-			f.logger.Errorf("Source missing %d", iHaveTimeoutTimer.MID)
-			return
+		if len(missingMsg.sources) == 0 {
+			delete(f.missingMessages, mid)
+			continue
 		}
 
-		if len(messageSources) == 0 {
-			f.logger.Error("Message source is empty")
-			return
+		if time.Since(missingMsg.ts) < IHaveTimeout {
+			continue
 		}
-		newTimerID := f.babel.RegisterTimer(f.ID(), iHaveTimeoutTimer)
-		f.ongoingTimers[iHaveTimeoutTimer.MID] = newTimerID
 
-		for k, messageSource := range messageSources {
-			delete(messageSources, k)
+		for k, messageSource := range missingMsg.sources {
 			if sibling, child, parent := f.getPeerRelationshipType(messageSource.p); !sibling && !child && !parent {
-				f.missingMessages[iHaveTimeoutTimer.MID] = messageSources
+				delete(missingMsg.sources, k)
 				continue
 			}
-			// f.logger.Infof("Sending GraftMessage for mid %d to %s", iHaveTimeoutTimer.MID, messageSource.p)
+			// f.logger.Infof("Sending GraftMessage for mid %d to %s", mid, messageSource.p)
 			f.babel.SendMessage(shared.GraftMessage{
-				MID:   iHaveTimeoutTimer.MID,
+				MID:   mid,
 				Round: messageSource.r,
 			}, messageSource.p, f.ID(), f.ID(), false)
 			break
+		}
+		if len(missingMsg.sources) == 0 {
+			delete(f.missingMessages, mid)
 		}
 	}
 }
@@ -435,10 +376,15 @@ func (f *Flood) getPeerRelationshipType(p peer.Peer) (isSibling, isChildren, isP
 func NewFloodProtocol(babel protocolManager.ProtocolManager, useC, isDemmon, isLandmark bool) protocol.Protocol {
 	logger := logs.NewLogger(name)
 	logger.SetLevel(logrus.InfoLevel)
+	var b [8]byte
+	_, err := crypto_rand.Read(b[:])
+	if err != nil {
+		panic("cannot seed math/rand package with cryptographically secure random number generator")
+	}
 	return &Flood{
 		mids:             []uint32{},
 		size:             100_000,
-		r:                shared.NewRand(),
+		r:                rand.New(rand.NewSource(int64(binary.LittleEndian.Uint64(b[:])))),
 		babel:            babel,
 		logger:           logger,
 		neighbors:        make(map[string]peer.Peer),
@@ -446,8 +392,7 @@ func NewFloodProtocol(babel protocolManager.ProtocolManager, useC, isDemmon, isL
 		demmonView:       demmonProto.InView{},
 		useUDP:           useC,
 		isDemmon:         isDemmon,
-		missingMessages:  map[uint32]map[string]messageSource{},
-		ongoingTimers:    make(map[uint32]int),
+		missingMessages:  make(map[uint32]*missingMessage),
 		isLandmark:       isLandmark,
 	}
 }
