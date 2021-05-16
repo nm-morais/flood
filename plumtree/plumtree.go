@@ -40,7 +40,7 @@ type Plumtree struct {
 	eagerPushPeers   map[string]peer.Peer
 	missingMessages  map[uint32]*missingMessage
 	mids             []uint32
-	receivedMessages map[uint32]message.Message
+	receivedMessages map[uint32]shared.GossipMessage
 	useUDP           bool
 }
 
@@ -115,6 +115,7 @@ func (f *Plumtree) MessageDeliveryErr(message message.Message, peer peer.Peer, e
 func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 	gossipMsg := m.(shared.GossipMessage)
 	_, alreadyReceived := f.receivedMessages[gossipMsg.MID]
+	delete(f.missingMessages, gossipMsg.MID)
 	if !alreadyReceived {
 		// f.logger.Infof("Received new message %d from %s", gossipMsg.MID, sender)
 		// f.logger.Infof("Received gossip message %d from %s", gossipMsg.MID, sender)
@@ -214,6 +215,7 @@ func (f *Plumtree) uponIHaveTimeout(t timer.Timer) {
 				Round: messageSource.r,
 			}, messageSource.p)
 			missingMsg.ts = time.Now()
+			f.missingMessages[mid] = missingMsg
 			break
 		}
 		if len(missingMsg.sources) == 0 {
@@ -292,7 +294,7 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) pro
 		eagerPushPeers:   map[string]peer.Peer{},
 		missingMessages:  map[uint32]*missingMessage{},
 		mids:             []uint32{},
-		receivedMessages: map[uint32]message.Message{},
+		receivedMessages: make(map[uint32]shared.GossipMessage),
 		useUDP:           useUDP,
 	}
 }
