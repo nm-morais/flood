@@ -45,17 +45,17 @@ func (f *Plumtree) lazyPush(msg shared.GossipMessage, round uint32, sender peer.
 }
 
 func (f *Plumtree) removeFromEager(p peer.Peer) {
-	if _, ok := f.eagerPushPeers[p.String()]; ok {
-		delete(f.eagerPushPeers, p.String())
-		f.logger.Infof("Deleted %s from eagerPushPeers; %+v", p.String(), f.eagerPushPeers)
-	}
+	// if _, ok := f.eagerPushPeers[p.String()]; ok {
+	delete(f.eagerPushPeers, p.String())
+	// f.logger.Infof("Deleted %s from eagerPushPeers; %+v", p.String(), f.eagerPushPeers)
+	// }
 }
 
 func (f *Plumtree) removeFromLazy(p peer.Peer) {
-	if _, ok := f.lazyPushPeers[p.String()]; ok {
-		delete(f.lazyPushPeers, p.String())
-		f.logger.Infof("Deleted %s from lazyPushPeers; %+v", p.String(), f.lazyPushPeers)
-	}
+	// if _, ok := f.lazyPushPeers[p.String()]; ok {
+	delete(f.lazyPushPeers, p.String())
+	// f.logger.Infof("Deleted %s from lazyPushPeers; %+v", p.String(), f.lazyPushPeers)
+	// }
 }
 
 func (f *Plumtree) addToLazy(p peer.Peer) {
@@ -64,7 +64,7 @@ func (f *Plumtree) addToLazy(p peer.Peer) {
 	}
 	if _, ok := f.lazyPushPeers[p.String()]; !ok {
 		f.lazyPushPeers[p.String()] = p
-		f.logger.Infof("Added %s to lazyPushPeers; %+v", p.String(), f.lazyPushPeers)
+		// f.logger.Infof("Added %s to lazyPushPeers; %+v", p.String(), f.lazyPushPeers)
 	}
 }
 
@@ -74,6 +74,6 @@ func (f *Plumtree) addToEager(p peer.Peer) {
 	}
 	if _, ok := f.eagerPushPeers[p.String()]; !ok {
 		f.eagerPushPeers[p.String()] = p
-		f.logger.Infof("Added %s to eagerPushPeers; %+v", p.String(), f.eagerPushPeers)
+		// f.logger.Infof("Added %s to eagerPushPeers; %+v", p.String(), f.eagerPushPeers)
 	}
 }

@@ -131,6 +131,7 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 			Message: gossipMsg,
 			From:    sender,
 		})
+		gossipMsg.Hop += 1
 		f.receivedMessages[gossipMsg.MID] = gossipMsg
 		f.mids = append(f.mids, gossipMsg.MID)
 		if len(f.mids) > f.size {
@@ -146,9 +147,8 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 		f.addToEager(sender)
 		f.removeFromLazy(sender)
 
-		f.eagerPush(gossipMsg, gossipMsg.Hop+1, sender)
-		f.lazyPush(gossipMsg, gossipMsg.Hop+1, sender)
-
+		f.eagerPush(gossipMsg, gossipMsg.Hop, sender)
+		f.lazyPush(gossipMsg, gossipMsg.Hop, sender)
 	} else {
 		// lastTime, ok := f.pruneBackoff[sender.String()]
 		// if ok {
@@ -282,18 +282,7 @@ func (f *Plumtree) uponBroadcastRequest(request request.Request) request.Reply {
 		MID:      mid,
 		Hop:      0,
 	}
-	f.babel.SendNotification(shared.DeliverMessageNotification{
-		Message: msg,
-		From:    f.babel.SelfPeer(),
-	})
-	f.receivedMessages[mid] = msg
-	f.mids = append(f.mids, mid)
-	if len(f.mids) > f.size {
-		delete(f.receivedMessages, f.mids[0])
-		f.mids = f.mids[1:]
-	}
-	f.eagerPush(msg, 1, f.babel.SelfPeer())
-	f.lazyPush(msg, 1, f.babel.SelfPeer())
+	f.uponReceiveGossipMessage(f.babel.SelfPeer(), msg)
 	return nil
 }
 
@@ -335,7 +324,7 @@ func NewPlumTreeProtocol(babel protocolManager.ProtocolManager, useUDP bool) pro
 	logger := logs.NewLogger(name)
 	// logger.SetLevel(logrus.InfoLevel)
 	return &Plumtree{
-		r:                rand.New(rand.NewSource(time.Now().UnixNano())),
+		r:                shared.NewRand(),
 		babel:            babel,
 		logger:           logger,
 		size:             100_000,

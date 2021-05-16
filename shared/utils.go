@@ -2,9 +2,11 @@ package shared
 
 import (
 	"bytes"
+	crypto_rand "crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	math_rand "math/rand"
 )
 
 // Serialization
@@ -23,6 +25,15 @@ func EncodeStringToBuffer(s string, buffer *bytes.Buffer) error {
 		return err
 	}
 	return nil
+}
+
+func NewRand() *math_rand.Rand {
+	var b [8]byte
+	_, err := crypto_rand.Read(b[:])
+	if err != nil {
+		panic("cannot seed math/rand package with cryptographically secure random number generator")
+	}
+	return math_rand.New(math_rand.NewSource(int64(binary.LittleEndian.Uint64(b[:]))))
 }
 
 func DecodeStringFromBuffer(buffer *bytes.Buffer) (string, error) {

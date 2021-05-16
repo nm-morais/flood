@@ -130,10 +130,6 @@ func (f *Flood) lazyPush(m shared.IHaveMessage, p peer.Peer) {
 }
 
 func (f *Flood) demmonFlood(m shared.GossipMessage, sender peer.Peer) {
-	iHaveMsg := shared.IHaveMessage{
-		MID:   m.MID,
-		Round: m.Hop,
-	}
 	for _, p := range f.demmonView.Children {
 		if peer.PeersEqual(p, sender) {
 			continue
@@ -157,8 +153,10 @@ func (f *Flood) demmonFlood(m shared.GossipMessage, sender peer.Peer) {
 			}
 		}
 	}
-
-	f.lazyPush(iHaveMsg, sender)
+	f.lazyPush(shared.IHaveMessage{
+		MID:   m.MID,
+		Round: m.Hop,
+	}, sender)
 
 	// _, _, parent := f.getPeerRelationshipType(sender)
 	// if parent {
@@ -250,6 +248,7 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 		Message: gossipMsg,
 		From:    sender,
 	})
+	gossipMsg.Hop += 1
 	f.receivedMessages[gossipMsg.MID] = gossipMsg
 	f.mids = append(f.mids, gossipMsg.MID)
 	if len(f.mids) > f.size {
@@ -257,7 +256,6 @@ func (f *Flood) uponReceiveGossipMessage(sender peer.Peer, m message.Message) {
 		f.mids = f.mids[1:]
 		delete(f.receivedMessages, toPop)
 	}
-	gossipMsg.Hop += 1
 	if f.isDemmon {
 		f.demmonFlood(gossipMsg, sender)
 	} else {
@@ -440,7 +438,7 @@ func NewFloodProtocol(babel protocolManager.ProtocolManager, useC, isDemmon, isL
 	return &Flood{
 		mids:             []uint32{},
 		size:             100_000,
-		r:                rand.New(rand.NewSource(time.Now().UnixNano())),
+		r:                shared.NewRand(),
 		babel:            babel,
 		logger:           logger,
 		neighbors:        make(map[string]peer.Peer),
