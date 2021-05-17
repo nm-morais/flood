@@ -137,13 +137,13 @@ func (f *Plumtree) uponReceiveGossipMessage(sender peer.Peer, m message.Message)
 		f.eagerPush(gossipMsg, gossipMsg.Hop, sender)
 		f.lazyPush(gossipMsg, gossipMsg.Hop, sender)
 	} else {
-		lastTime, ok := f.pruneBackoff[sender.String()]
-		if ok {
-			if time.Since(lastTime) < PruneBackoff {
-				return
-			}
-		}
-		f.pruneBackoff[sender.String()] = time.Now()
+		// lastTime, ok := f.pruneBackoff[sender.String()]
+		// if ok {
+		// 	if time.Since(lastTime) < PruneBackoff {
+		// 		return
+		// 	}
+		// }
+		// f.pruneBackoff[sender.String()] = time.Now()
 		// f.logger.Infof("Received duplicate message %d from %s", gossipMsg.MID, sender)
 		f.addToLazy(sender)
 		f.removeFromEager(sender)
