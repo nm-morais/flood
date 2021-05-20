@@ -13,6 +13,7 @@ import (
 	"time"
 
 	cyclonTMan "github.com/nm-morais/Cyclon_T-Man/protocol"
+	cyclon "github.com/nm-morais/cyclon/protocol"
 	demmon "github.com/nm-morais/demmon/core/membership/protocol"
 	babel "github.com/nm-morais/go-babel/pkg"
 	"github.com/nm-morais/go-babel/pkg/peer"
@@ -43,6 +44,7 @@ const (
 
 	HyparviewName  = "hyparview"
 	cyclonTmanName = "Cyclon_T-Man"
+	cyclonName     = "cyclon"
 	xBotName       = "x-bot"
 	demmonName     = "demmon"
 
@@ -150,7 +152,21 @@ func main() {
 		)
 		p.RegisterNodeWatcher(nw)
 		p.RegisterProtocol(cyclonTMan.NewCyclonTManProtocol(p, nw, conf))
-
+	case cyclonName:
+		fmt.Println("Protocol being used is: Cyclon")
+		conf := &cyclon.CyclonConfig{}
+		readConfFile(*confFile, conf)
+		conf.SelfPeer = struct {
+			AnalyticsPort int    `yaml:"analyticsPort"`
+			Port          int    `yaml:"port"`
+			Host          string `yaml:"host"`
+		}{
+			AnalyticsPort: int(selfPeer.AnalyticsPort()),
+			Port:          int(selfPeer.ProtosPort()),
+			Host:          selfPeer.IP().String(),
+		}
+		conf.BootstrapPeers = bootstrapsParsed
+		p.RegisterProtocol(cyclon.NewCyclonProtocol(p, conf))
 	case HyparviewName:
 		fmt.Println("Protocol being used is: Hyparview")
 		conf := &hpv.HyparviewConfig{}
@@ -165,7 +181,6 @@ func main() {
 			Host:          selfPeer.IP().String(),
 		}
 		conf.BootstrapPeers = bootstrapsParsed
-
 		p.RegisterProtocol(hpv.NewHyparviewProtocol(p, conf))
 	case demmonName:
 		fmt.Println("Protocol being used is: Demmon")
@@ -241,9 +256,9 @@ func main() {
 
 	var floodProto protocol.Protocol
 	if *broadcastProtocol == floodName {
-		floodProto = flood.NewFloodProtocol(p, *membershipProtocol == cyclonTmanName, *membershipProtocol == demmonName, isLandmark)
+		floodProto = flood.NewFloodProtocol(p, *membershipProtocol == cyclonTmanName || *membershipProtocol == cyclonName, *membershipProtocol == demmonName, isLandmark)
 	} else if *broadcastProtocol == plumTreeName {
-		floodProto = plumtree.NewPlumTreeProtocol(p, *membershipProtocol == cyclonTmanName)
+		floodProto = plumtree.NewPlumTreeProtocol(p, *membershipProtocol == cyclonTmanName || *membershipProtocol == cyclonName)
 	} else {
 		panic("Unrecognized broadcast protocol")
 	}
@@ -323,5 +338,4 @@ func ParseBootstrapArg(arg *string) []struct {
 		}
 	}
 	return bootstrapPeers
-
 }

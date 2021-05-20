@@ -130,7 +130,7 @@ func NewApplicationProtocol(babel protocolManager.ProtocolManager, isPlumtreeRoo
 	logger := logs.NewLogger(Name)
 
 	csvHeaders := []string{"ip", "timestamp", "time", "hopNr", "mid"}
-	prepareTime := time.Duration(float32(scenarioDuration) * 0.20)
+	prepareTime := time.Duration(float32(scenarioDuration) * 0.40)
 	runTime := time.Duration(float32(scenarioDuration-prepareTime) * 0.2)
 	if isPlumtreeRoot {
 		prepareTime -= time.Duration(float32(scenarioDuration) * 0.1)

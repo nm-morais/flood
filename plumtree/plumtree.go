@@ -179,9 +179,13 @@ func (f *Plumtree) uponReceivePruneMessage(sender peer.Peer, m message.Message) 
 
 func (f *Plumtree) uponReceiveGraftMessage(sender peer.Peer, m message.Message) {
 	// f.logger.Infof("Received graft message from %s", sender)
+	peerInView := true
 	if _, ok := f.view[sender.String()]; !ok {
-		f.logger.Error("Sender of graft message is not a neighbor")
-		return
+		peerInView = false
+		if !f.useUDP {
+			f.logger.Error("Sender of graft message is not a neighbor")
+			return
+		}
 	}
 
 	graftMsg := m.(shared.GraftMessage)
@@ -190,9 +194,10 @@ func (f *Plumtree) uponReceiveGraftMessage(sender peer.Peer, m message.Message) 
 		f.logger.Errorf("Do not have message %d in order to respond to graft message", graftMsg.MID)
 		return
 	}
-
-	f.addToEager(sender)
-	f.removeFromLazy(sender)
+	if peerInView {
+		f.addToEager(sender)
+		f.removeFromLazy(sender)
+	}
 	// f.logger.Infof("Replying to graft message %d from %s", graftMsg.MID, sender.String())
 	f.sendMessage(toSend, sender)
 }
