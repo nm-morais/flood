@@ -228,13 +228,14 @@ func main() {
 			NrPeersToMeasureRandom:                 1,
 			MeasureNewPeersRefreshTickDuration:     7 * time.Second,
 			MaxMeasuredPeers:                       15,
+			MaxLatencyDowngrade:                    30 * time.Millisecond,
 			MinLatencyImprovementToImprovePosition: 50 * time.Millisecond,
 			CheckChildenSizeTimerDuration:          7 * time.Second,
 			EmitWalkProbability:                    0.33,
 			BiasedWalkProbability:                  0.2,
 			AttemptImprovePositionProbability:      0.5,
-			MinGrpSize:                             2,
-			MaxGrpSize:                             9,
+			MinGrpSize:                             3,
+			MaxGrpSize:                             8,
 			UnderpopulatedGroupTimerDuration:       12 * time.Second,
 		}
 
