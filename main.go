@@ -210,7 +210,7 @@ func main() {
 			UseBwScore:                             *useBW,
 			Landmarks:                              landmarks,
 			LandmarkRedialTimer:                    5 * time.Second,
-			JoinMessageTimeout:                     10 * time.Second,
+			JoinMessageTimeout:                     7 * time.Second,
 			MaxRetriesJoinMsg:                      3,
 			ParentRefreshTickDuration:              5 * time.Second,
 			ChildrenRefreshTickDuration:            5 * time.Second,
