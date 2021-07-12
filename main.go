@@ -151,6 +151,7 @@ func main() {
 		)
 		p.RegisterNodeWatcher(nw)
 		p.RegisterProtocol(cyclonTMan.NewCyclonTManProtocol(p, nw, conf))
+		p.RegisterListenAddr(selfPeer.ToUDPAddr())
 	case cyclonName:
 		fmt.Println("Protocol being used is: Cyclon")
 		conf := &cyclon.CyclonConfig{}
@@ -166,6 +167,7 @@ func main() {
 		}
 		conf.BootstrapPeers = bootstrapsParsed
 		p.RegisterProtocol(cyclon.NewCyclonProtocol(p, conf))
+		p.RegisterListenAddr(selfPeer.ToUDPAddr())
 	case HyparviewName:
 		fmt.Println("Protocol being used is: Hyparview")
 		conf := &hpv.HyparviewConfig{}
@@ -244,7 +246,6 @@ func main() {
 	}
 
 	p.RegisterListenAddr(selfPeer.ToTCPAddr())
-	p.RegisterListenAddr(selfPeer.ToUDPAddr())
 
 	if *membershipProtocol == demmonName {
 		if *broadcastProtocol != floodName {
